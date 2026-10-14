@@ -2,27 +2,70 @@ using UnityEngine;
 
 namespace FractionCircles
 {
-    /// <summary>Generates every texture and sprite at runtime, so the project needs no imported art.</summary>
+    /// <summary>
+    /// All textures and sprites of the tool. They are loaded from Resources/FractionCircles when the image files
+    /// exist there, otherwise they are drawn in code.
+    /// </summary>
     public static class ProceduralArt
     {
+        public const string ResourceFolder = "FractionCircles";
+
+        /// <summary>A generated image: its file name, pixels, 9-slice border and whether it is a tiling texture.</summary>
+        public struct ArtFile
+        {
+            public string name;
+            public Texture2D texture;
+            public float border;
+            public bool tiling;
+        }
+
+        /// <summary>Draws every image so it can be saved as a file.</summary>
+        public static ArtFile[] GenerateAll() => new[]
+        {
+            new ArtFile { name = "circle", texture = CircleTex(128) },
+            new ArtFile { name = "rounded", texture = RoundedTex(64, 16, 0, Color.white, Color.white), border = 20 },
+            new ArtFile { name = "card", texture = RoundedTex(64, 12, 3, Color.white, new Color(0.45f, 0.45f, 0.47f)), border = 16 },
+            new ArtFile { name = "glow", texture = GlowTex(128) },
+            new ArtFile { name = "star", texture = StarTex(64) },
+            new ArtFile { name = "pill", texture = RoundedTex(128, 64, 0, Color.white, Color.white), border = 62 },
+            new ArtFile { name = "ring", texture = RingTex(128, 7) },
+            new ArtFile { name = "speaker", texture = ShapeTex(96, SpeakerShape) },
+            new ArtFile { name = "note", texture = ShapeTex(96, NoteShape) },
+            new ArtFile { name = "house", texture = ShapeTex(96, HouseShape) },
+            new ArtFile { name = "felt", texture = FeltTex(256), tiling = true },
+            new ArtFile { name = "wood", texture = WoodTex(512), tiling = true },
+        };
+
+        static Sprite LoadSprite(string name, System.Func<Sprite> draw)
+        {
+            var s = Resources.Load<Sprite>(ResourceFolder + "/" + name);
+            return s != null ? s : draw();
+        }
+
+        static Texture2D LoadTexture(string name, System.Func<Texture2D> draw)
+        {
+            var t = Resources.Load<Texture2D>(ResourceFolder + "/" + name);
+            return t != null ? t : draw();
+        }
+
         static Sprite circle, rounded, card, glow, star;
         static Texture2D felt, wood;
 
-        public static Sprite Circle => circle ? circle : (circle = MakeSprite(CircleTex(128), 0));
-        public static Sprite Rounded => rounded ? rounded : (rounded = MakeSprite(RoundedTex(64, 16, 0, Color.white, Color.white), 20));
-        public static Sprite Card => card ? card : (card = MakeSprite(RoundedTex(64, 12, 3, Color.white, new Color(0.45f, 0.45f, 0.47f)), 16));
-        public static Sprite Glow => glow ? glow : (glow = MakeSprite(GlowTex(128), 0));
-        public static Sprite Star => star ? star : (star = MakeSprite(StarTex(64), 0));
-        public static Texture2D FeltTexture => felt ? felt : (felt = FeltTex(256));
-        public static Texture2D WoodTexture => wood ? wood : (wood = WoodTex(512));
+        public static Sprite Circle => circle ? circle : (circle = LoadSprite("circle", () => MakeSprite(CircleTex(128), 0)));
+        public static Sprite Rounded => rounded ? rounded : (rounded = LoadSprite("rounded", () => MakeSprite(RoundedTex(64, 16, 0, Color.white, Color.white), 20)));
+        public static Sprite Card => card ? card : (card = LoadSprite("card", () => MakeSprite(RoundedTex(64, 12, 3, Color.white, new Color(0.45f, 0.45f, 0.47f)), 16)));
+        public static Sprite Glow => glow ? glow : (glow = LoadSprite("glow", () => MakeSprite(GlowTex(128), 0)));
+        public static Sprite Star => star ? star : (star = LoadSprite("star", () => MakeSprite(StarTex(64), 0)));
+        public static Texture2D FeltTexture => felt ? felt : (felt = LoadTexture("felt", () => FeltTex(256)));
+        public static Texture2D WoodTexture => wood ? wood : (wood = LoadTexture("wood", () => WoodTex(512)));
 
         static Sprite pill, ring, speaker, note, house;
 
-        public static Sprite Pill => pill ? pill : (pill = MakeSprite(RoundedTex(128, 64, 0, Color.white, Color.white), 62));
-        public static Sprite Ring => ring ? ring : (ring = MakeSprite(RingTex(128, 7), 0));
-        public static Sprite Speaker => speaker ? speaker : (speaker = MakeSprite(ShapeTex(96, SpeakerShape), 0));
-        public static Sprite Note => note ? note : (note = MakeSprite(ShapeTex(96, NoteShape), 0));
-        public static Sprite House => house ? house : (house = MakeSprite(ShapeTex(96, HouseShape), 0));
+        public static Sprite Pill => pill ? pill : (pill = LoadSprite("pill", () => MakeSprite(RoundedTex(128, 64, 0, Color.white, Color.white), 62)));
+        public static Sprite Ring => ring ? ring : (ring = LoadSprite("ring", () => MakeSprite(RingTex(128, 7), 0)));
+        public static Sprite Speaker => speaker ? speaker : (speaker = LoadSprite("speaker", () => MakeSprite(ShapeTex(96, SpeakerShape), 0)));
+        public static Sprite Note => note ? note : (note = LoadSprite("note", () => MakeSprite(ShapeTex(96, NoteShape), 0)));
+        public static Sprite House => house ? house : (house = LoadSprite("house", () => MakeSprite(ShapeTex(96, HouseShape), 0)));
 
         static Texture2D RingTex(int s, float width)
         {

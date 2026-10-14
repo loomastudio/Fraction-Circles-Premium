@@ -11,24 +11,24 @@ namespace FractionCircles
     /// </summary>
     public class MainMenu : MonoBehaviour
     {
-        Language titleLanguage;
-
-        RectTransform root;
-        CanvasGroup group;
-        RectTransform floatersRoot, wheel, wheelShadow, titleRoot, subtitle;
-        readonly List<Floater> floaters = new List<Floater>();
-        readonly List<RectTransform> letters = new List<RectTransform>();
-        readonly List<float> letterX = new List<float>();
-        readonly List<RectTransform> wedges = new List<RectTransform>();
-        readonly List<RectTransform> buttons = new List<RectTransform>();
+        [SerializeField] Language titleLanguage;
+        [SerializeField] RectTransform root;
+        [SerializeField] CanvasGroup group;
+        [SerializeField] RectTransform floatersRoot, wheel, wheelShadow, titleRoot, subtitle;
+        [SerializeField] List<Floater> floaters = new List<Floater>();
+        [SerializeField] List<RectTransform> letters = new List<RectTransform>();
+        [SerializeField] List<float> letterX = new List<float>();
+        [SerializeField] List<RectTransform> wedges = new List<RectTransform>();
+        [SerializeField] List<RectTransform> buttons = new List<RectTransform>();
         Coroutine intro, fade;
         float introTime;
         bool introDone;
 
-        public Button StartButton { get; private set; }
-        public Button TourButton { get; private set; }
+        [field: SerializeField] public Button StartButton { get; private set; }
+        [field: SerializeField] public Button TourButton { get; private set; }
         public bool IsVisible => root.gameObject.activeSelf && group.alpha > 0.5f;
 
+        [System.Serializable]
         class Floater
         {
             public RectTransform rt;
@@ -89,7 +89,6 @@ namespace FractionCircles
 
             titleRoot = UIFactory.Rect("Title", root).Anchor(new Vector2(0.5f, 1), new Vector2(0.5f, 0.5f), new Vector2(0, -190), new Vector2(1200, 140));
             BuildTitle();
-            SettingsListener.Attach(titleRoot.gameObject, () => { if (Loc.Current != titleLanguage) { BuildTitle(); ShowTitleNow(); } });
 
             // Self-assembling wheel.
             wheel = UIFactory.Rect("Wheel", root).Centered(new Vector2(300, 300));
@@ -119,16 +118,16 @@ namespace FractionCircles
             soon.rectTransform.Stretch();
             Loc.Bind(soon, "soon");
 
-            StartButton.onClick.AddListener(() => FractionApp.I.OpenTool());
-            TourButton.onClick.AddListener(() => FractionApp.I.StartTour());
-            ex.onClick.AddListener(() => FractionApp.I.ShowPremium());
+            UIAction.Add(StartButton, UIActionKind.Start);
+            UIAction.Add(TourButton, UIActionKind.Tour);
+            UIAction.Add(ex, UIActionKind.Exercises);
 
             // Sound + music toggles in the corner.
             var corner = UIFactory.Rect("Audio", root).Anchor(new Vector2(1, 1), new Vector2(1, 1), new Vector2(-24, -24), new Vector2(260, 76));
             var snd = RoundButton(corner, new Vector2(-38, -38));
-            FractionApp.SoundIcon(snd, ProceduralArt.Speaker, () => Settings.Sound, v => Settings.Sound = v);
+            FractionApp.SoundIcon(snd, ProceduralArt.Speaker, SettingKind.Sound);
             var mus = RoundButton(corner, new Vector2(-128, -38));
-            FractionApp.SoundIcon(mus, ProceduralArt.Note, () => Settings.Music, v => Settings.Music = v);
+            FractionApp.SoundIcon(mus, ProceduralArt.Note, SettingKind.Music);
             buttons.Add((RectTransform)snd.transform.parent);
             buttons.Add((RectTransform)mus.transform.parent);
             var lang = RoundButton(corner, new Vector2(-218, -38));
@@ -138,7 +137,12 @@ namespace FractionCircles
 
         void BuildTitle()
         {
-            foreach (var l in letters) if (l) Destroy(l.gameObject);
+            foreach (var l in letters)
+            {
+                if (!l) continue;
+                if (Application.isPlaying) Destroy(l.gameObject);
+                else DestroyImmediate(l.gameObject);
+            }
             letters.Clear();
             letterX.Clear();
 
@@ -213,6 +217,21 @@ namespace FractionCircles
         }
 
         // ------------------------------------------------------------------ show / hide
+
+        void Awake()
+        {
+            Settings.Changed += OnSettingsChanged;
+            if (titleLanguage != Loc.Current || letters.Count == 0) BuildTitle();
+        }
+
+        void OnDestroy() => Settings.Changed -= OnSettingsChanged;
+
+        void OnSettingsChanged()
+        {
+            if (Loc.Current == titleLanguage) return;
+            BuildTitle();
+            ShowTitleNow();
+        }
 
         void Start() => Show();
 

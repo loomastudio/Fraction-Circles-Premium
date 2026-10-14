@@ -9,27 +9,30 @@ using UnityEngine.InputSystem.UI;
 
 namespace FractionCircles
 {
+    /// <summary>
+    /// Root of the tool. The whole layout (tray, card strip, table, toolbar...) is saved in the scene;
+    /// <see cref="BuildScene"/> creates it, and it only runs again if the scene is empty.
+    /// </summary>
     public class FractionApp : MonoBehaviour
     {
         public static FractionApp I { get; private set; }
 
-        public RectTransform CanvasRect { get; private set; }
-        public RectTransform ItemsLayer { get; private set; }
-        public RectTransform TopLayer { get; private set; }
-        public Workspace Workspace { get; private set; }
-        public TrashBin Bin { get; private set; }
-        public MainMenu Menu { get; private set; }
+        [field: SerializeField] public RectTransform CanvasRect { get; private set; }
+        [field: SerializeField] public RectTransform ItemsLayer { get; private set; }
+        [field: SerializeField] public RectTransform OverlayLayer { get; private set; }
+        [field: SerializeField] public RectTransform TopLayer { get; private set; }
+        [field: SerializeField] public Workspace Workspace { get; private set; }
+        [field: SerializeField] public TrashBin Bin { get; private set; }
+        [field: SerializeField] public MainMenu Menu { get; private set; }
+        [field: SerializeField] public Button HomeButton { get; private set; }
+        [field: SerializeField] public Button LabelsButton { get; private set; }
+        [field: SerializeField] public Button ColorsButton { get; private set; }
         public GuidedTour Tour { get; private set; }
-
-        public Button HomeButton { get; private set; }
-        public Button LabelsButton { get; private set; }
-        public Button ColorsButton { get; private set; }
 
         public float Scale => CanvasRect.localScale.x;
 
         readonly Dictionary<(int, int), SpawnSource> traySources = new Dictionary<(int, int), SpawnSource>();
         readonly Dictionary<string, SpawnSource> cardSources = new Dictionary<string, SpawnSource>();
-        RectTransform overlayLayer;
 
         public SpawnSource TraySource(int denominator, int index) => traySources[(denominator, index)];
         public SpawnSource CardSource(string value) => cardSources[value];
@@ -37,6 +40,7 @@ namespace FractionCircles
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Boot()
         {
+            Edition.Detect();
             if (FindAnyObjectByType<FractionApp>() == null)
                 new GameObject("Fraction Circles").AddComponent<FractionApp>();
         }
@@ -61,8 +65,14 @@ namespace FractionCircles
             }
 
             EnsureEventSystem();
-            AudioManager.Create(transform);
-            BuildCanvas();
+            if (GetComponentInChildren<AudioManager>(true) == null) AudioManager.Create(transform);
+            if (CanvasRect == null) BuildScene();
+
+            foreach (var s in GetComponentsInChildren<SpawnSource>(true))
+            {
+                if (s.kind == SpawnSource.Kind.Piece) traySources[(s.denominator, s.index)] = s;
+                else cardSources[s.value] = s;
+            }
 
             Tour = gameObject.AddComponent<GuidedTour>();
         }
@@ -72,15 +82,23 @@ namespace FractionCircles
             if (I == this) I = null;
         }
 
-        static void EnsureEventSystem()
+        public static EventSystem EnsureEventSystem()
         {
-            if (FindAnyObjectByType<EventSystem>() != null) return;
-            var go = new GameObject("EventSystem", typeof(EventSystem));
+            var es = FindAnyObjectByType<EventSystem>();
+            if (es == null)
+            {
+                es = new GameObject("EventSystem", typeof(EventSystem)).GetComponent<EventSystem>();
 #if ENABLE_INPUT_SYSTEM
-            go.AddComponent<InputSystemUIInputModule>().AssignDefaultActions();
+                es.gameObject.AddComponent<InputSystemUIInputModule>();
 #else
-            go.AddComponent<StandaloneInputModule>();
+                es.gameObject.AddComponent<StandaloneInputModule>();
 #endif
+            }
+#if ENABLE_INPUT_SYSTEM
+            var module = es.GetComponent<InputSystemUIInputModule>();
+            if (module != null && module.actionsAsset == null && Application.isPlaying) module.AssignDefaultActions();
+#endif
+            return es;
         }
 
         // ------------------------------------------------------------------ screens
@@ -116,7 +134,8 @@ namespace FractionCircles
 
         // ------------------------------------------------------------------ layout
 
-        void BuildCanvas()
+        /// <summary>Creates the whole layout under this object (used once, when the scene is set up).</summary>
+        public void BuildScene()
         {
             var canvasGo = new GameObject("Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             canvasGo.layer = 5;
@@ -149,7 +168,7 @@ namespace FractionCircles
 
             BuildToolbar();
 
-            overlayLayer = UIFactory.Rect("Overlay", CanvasRect).Stretch();
+            OverlayLayer = UIFactory.Rect("Overlay", CanvasRect).Stretch();
             if (Edition.Premium) Menu = MainMenu.Build(CanvasRect);
             TopLayer = UIFactory.Rect("Top", CanvasRect).Stretch();
         }
@@ -190,7 +209,7 @@ namespace FractionCircles
             h.sizeDelta = new Vector2(0, 3);
         }
 
-        void BuildInset(RectTransform cell, int n)
+        static void BuildInset(RectTransform cell, int n)
         {
             var glow = UIFactory.Image(cell, "Glow", ProceduralArt.Glow, new Color(0.6f, 1f, 0.5f, 0.22f));
             glow.rectTransform.Centered(new Vector2(330, 260));
@@ -206,17 +225,14 @@ namespace FractionCircles
                 var g = srt.gameObject.AddComponent<SectorGraphic>();
                 g.Configure(n, Theme.PieceColor(n), true, true);
                 g.UseThemeColor();
-
-                var src = srt.gameObject.AddComponent<SpawnSource>();
-                float angle = -k * sweep;
-                src.Factory = () => FractionPiece.Create(n, srt.position, angle);
-                traySources[(n, k)] = src;
+                SpawnSource.ForPiece(srt.gameObject, n, k);
             }
 
             var caption = UIFactory.Text(cell, "Caption", n == 1 ? "1" : "1/" + n, 22, new Color(1, 1, 1, 0.75f));
             caption.rectTransform.Anchor(new Vector2(0, 1), new Vector2(0, 1), new Vector2(12, -8), new Vector2(60, 28));
             caption.alignment = TextAnchor.UpperLeft;
-            SettingsListener.Attach(caption.gameObject, () => caption.enabled = Settings.ShowLabels);
+            caption.enabled = Settings.ShowLabels;
+            SettingIndicator.Add(cell.gameObject, SettingKind.Labels).enableWhenOn = caption;
         }
 
         void BuildCardStrip()
@@ -249,14 +265,11 @@ namespace FractionCircles
             AddCardSource(row, CardKind.FractionBar, "bar");
         }
 
-        void AddCardSource(RectTransform row, CardKind kind, string value)
+        static void AddCardSource(RectTransform row, CardKind kind, string value)
         {
             var rt = UIFactory.Rect("Source " + value, row);
             CardItem.BuildArt(rt, kind, value, false);
-            var src = rt.gameObject.AddComponent<SpawnSource>();
-            src.FootprintRadius = kind == CardKind.FractionBar ? Theme.BarWidth * 0.5f : Theme.CardSize * 0.6f;
-            src.Factory = () => CardItem.Create(kind, value, rt.position);
-            cardSources[value] = src;
+            SpawnSource.ForCard(rt.gameObject, kind, value);
         }
 
         // ------------------------------------------------------------------ toolbar
@@ -284,17 +297,17 @@ namespace FractionCircles
             {
                 HomeButton = ToolButton(col, "menu", out _);
                 Icon(HomeButton, ProceduralArt.House, 32);
-                HomeButton.onClick.AddListener(GoHome);
+                UIAction.Add(HomeButton, UIActionKind.Home);
             }
 
             var help = ToolButton(col, "help", out _);
             UIFactory.Text(help.transform, "Icon", "?", 30, Theme.Ink).rectTransform.Stretch(0, 2, 0, 0);
-            help.onClick.AddListener(ShowHelp);
+            UIAction.Add(help, UIActionKind.Help);
 
             if (Edition.Premium) AddDisplayOptions(col);
 
             var sound = ToolButton(col, "sound", out _);
-            SoundIcon(sound, ProceduralArt.Speaker, () => Settings.Sound, v => Settings.Sound = v, 32);
+            SoundIcon(sound, ProceduralArt.Speaker, SettingKind.Sound, 32);
 
             LanguageButton(ToolButton(col, "language", out _), 22);
         }
@@ -303,8 +316,8 @@ namespace FractionCircles
         {
             LabelsButton = ToolButton(col, "labels", out var labelsRing);
             UIFactory.Text(LabelsButton.transform, "Icon", "½", 30, Theme.Ink).rectTransform.Stretch(0, 2, 0, 0);
-            LabelsButton.onClick.AddListener(() => Settings.ShowLabels = !Settings.ShowLabels);
-            SettingsListener.Attach(LabelsButton.gameObject, () => labelsRing.color = Settings.ShowLabels ? Theme.Gold : Color.clear);
+            UIAction.Add(LabelsButton, UIActionKind.ToggleLabels);
+            SettingIndicator.Add(LabelsButton.transform.parent.gameObject, SettingKind.Labels).tint = labelsRing;
 
             ColorsButton = ToolButton(col, "colours", out var colorsRing);
             for (int k = 0; k < 4; k++)
@@ -315,12 +328,12 @@ namespace FractionCircles
                 g.Configure(4, Theme.Rainbow[k * 2], false, false);
                 g.raycastTarget = false;
             }
-            ColorsButton.onClick.AddListener(() => Settings.Colorful = !Settings.Colorful);
-            SettingsListener.Attach(ColorsButton.gameObject, () => colorsRing.color = Settings.Colorful ? Theme.Gold : Color.clear);
+            UIAction.Add(ColorsButton, UIActionKind.ToggleColours);
+            SettingIndicator.Add(ColorsButton.transform.parent.gameObject, SettingKind.Colourful).tint = colorsRing;
         }
 
         /// <summary>A round toolbar button with a translated caption. <paramref name="ring"/> shows the "on" state.</summary>
-        Button ToolButton(RectTransform parent, string captionKey, out Image ring)
+        static Button ToolButton(RectTransform parent, string captionKey, out Image ring)
         {
             var holder = UIFactory.Rect(captionKey, parent);
             holder.sizeDelta = new Vector2(Theme.ToolbarWidth, 64);
@@ -347,14 +360,15 @@ namespace FractionCircles
         }
 
         /// <summary>An on/off icon button: draws a red slash when the setting is off.</summary>
-        public static void SoundIcon(Button b, Sprite s, System.Func<bool> get, System.Action<bool> set, float size = 40)
+        public static void SoundIcon(Button b, Sprite s, SettingKind setting, float size = 40)
         {
             Icon(b, s, size);
             var slash = UIFactory.Image(b.transform, "Off", ProceduralArt.Rounded, new Color(0.85f, 0.2f, 0.2f)).rectTransform;
             slash.Centered(new Vector2(size * 0.15f, size * 1.25f));
             slash.localRotation = Quaternion.Euler(0, 0, 45);
-            b.onClick.AddListener(() => set(!get()));
-            SettingsListener.Attach(b.gameObject, () => slash.gameObject.SetActive(!get()));
+            slash.gameObject.SetActive(!SettingIndicator.Value(setting));
+            UIAction.Add(b, setting == SettingKind.Music ? UIActionKind.ToggleMusic : UIActionKind.ToggleSound);
+            SettingIndicator.Add(b.gameObject, setting).showWhenOff = slash.gameObject;
         }
 
         /// <summary>Shows the current language code (EN / FR); tapping switches language.</summary>
@@ -363,7 +377,7 @@ namespace FractionCircles
             var t = UIFactory.Text(b.transform, "Code", "", fontSize, Theme.Ink);
             t.rectTransform.Stretch(0, 1, 0, 0);
             Loc.Bind(t, "langCode");
-            b.onClick.AddListener(Loc.Toggle);
+            UIAction.Add(b, UIActionKind.ToggleLanguage);
         }
 
         // ------------------------------------------------------------------ dialogs
@@ -441,7 +455,7 @@ namespace FractionCircles
 
         public void FloatText(string text, Vector3 worldPos)
         {
-            var t = UIFactory.Text(overlayLayer, "Float", text, 34, Color.white);
+            var t = UIFactory.Text(OverlayLayer, "Float", text, 34, Color.white);
             t.rectTransform.sizeDelta = new Vector2(400, 50);
             t.rectTransform.position = worldPos;
             var o = t.gameObject.AddComponent<Outline>();
@@ -462,61 +476,6 @@ namespace FractionCircles
                 yield return null;
             }
             if (t) Destroy(t.gameObject);
-        }
-    }
-
-    public static class Ease
-    {
-        public static float OutBack(float t, float s = 1.70158f)
-        {
-            t = Mathf.Clamp01(t) - 1f;
-            return t * t * ((s + 1f) * t + s) + 1f;
-        }
-
-        public static float OutCubic(float t) => 1f - Mathf.Pow(1f - Mathf.Clamp01(t), 3f);
-
-        public static float InOutCubic(float t)
-        {
-            t = Mathf.Clamp01(t);
-            return t < 0.5f ? 4f * t * t * t : 1f - Mathf.Pow(-2f * t + 2f, 3f) / 2f;
-        }
-
-        public static float OutBounce(float t)
-        {
-            t = Mathf.Clamp01(t);
-            const float n = 7.5625f, d = 2.75f;
-            if (t < 1f / d) return n * t * t;
-            if (t < 2f / d) { t -= 1.5f / d; return n * t * t + 0.75f; }
-            if (t < 2.5f / d) { t -= 2.25f / d; return n * t * t + 0.9375f; }
-            t -= 2.625f / d;
-            return n * t * t + 0.984375f;
-        }
-    }
-
-    /// <summary>Springy hover / press feedback and a click sound for buttons.</summary>
-    public class ButtonFx : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler, IPointerUpHandler, IPointerClickHandler
-    {
-        public float hoverScale = 1.07f;
-        public Sfx sound = Sfx.Tap;
-        bool over, down;
-        float baseScale = 1f;
-
-        void OnEnable() => baseScale = 1f;
-
-        public void OnPointerEnter(PointerEventData e) => over = true;
-        public void OnPointerExit(PointerEventData e) => over = false;
-        public void OnPointerDown(PointerEventData e) => down = true;
-        public void OnPointerUp(PointerEventData e) => down = false;
-        public void OnPointerClick(PointerEventData e) => AudioManager.Play(sound, 0.7f);
-
-        public void Press() { down = true; }
-        public void Release() { down = false; }
-
-        void Update()
-        {
-            float target = baseScale * (down ? 0.9f : over ? hoverScale : 1f);
-            float s = Mathf.Lerp(transform.localScale.x, target, 1f - Mathf.Exp(-20f * Time.deltaTime));
-            transform.localScale = new Vector3(s, s, 1f);
         }
     }
 }

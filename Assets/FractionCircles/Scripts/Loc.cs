@@ -83,7 +83,6 @@ namespace FractionCircles
             texts.TryGetValue(key, out var t) ? t[(int)Current] : key;
 
         /// <summary>Keeps <paramref name="text"/> showing <paramref name="key"/> in the current language.</summary>
-        public static void Bind(Text text, string key) =>
-            SettingsListener.Attach(text.gameObject, () => text.text = Get(key));
+        public static void Bind(Text text, string key) => LocalizedText.Attach(text, key);
     }
 }

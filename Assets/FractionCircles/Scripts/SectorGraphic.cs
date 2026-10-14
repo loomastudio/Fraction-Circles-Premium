@@ -11,11 +11,12 @@ namespace FractionCircles
     [RequireComponent(typeof(CanvasRenderer))]
     public class SectorGraphic : MaskableGraphic, ICanvasRaycastFilter
     {
-        int denominator = 1;
-        Color fill = Theme.ClassicRed;
-        bool gradient = true;
-        bool outline = true;
-        bool autoColor;
+        [SerializeField] int denominator = 1;
+        [SerializeField] Color fill = Theme.ClassicRed;
+        [SerializeField] bool gradient = true;
+        [SerializeField] bool outline = true;
+        [Tooltip("Use the colour of the current colour mode for this denominator.")]
+        [SerializeField] bool followTheme;
 
         /// <summary>Local angle (degrees, counter-clockwise from +X) of the wedge's leading edge.</summary>
         public float startAngle = 90f;
@@ -41,22 +42,31 @@ namespace FractionCircles
         /// <summary>Follow the global colour setting for this denominator.</summary>
         public void UseThemeColor()
         {
-            if (autoColor) return;
-            autoColor = true;
+            followTheme = true;
+            Settings.Changed -= RefreshThemeColor;
             Settings.Changed += RefreshThemeColor;
             RefreshThemeColor();
+        }
+
+        protected override void OnEnable()
+        {
+            base.OnEnable();
+            if (!followTheme) return;
+            Settings.Changed -= RefreshThemeColor;
+            Settings.Changed += RefreshThemeColor;
+            RefreshThemeColor();
+        }
+
+        protected override void OnDisable()
+        {
+            Settings.Changed -= RefreshThemeColor;
+            base.OnDisable();
         }
 
         void RefreshThemeColor()
         {
             fill = Theme.PieceColor(denominator);
             SetVerticesDirty();
-        }
-
-        protected override void OnDestroy()
-        {
-            if (autoColor) Settings.Changed -= RefreshThemeColor;
-            base.OnDestroy();
         }
 
         float Radius => Mathf.Min(rectTransform.rect.width, rectTransform.rect.height) * 0.5f;
